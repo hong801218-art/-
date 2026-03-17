@@ -1,0 +1,194 @@
+
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>Stability Tracker v5.5 - Ocean Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body { @apply bg-[#f0f9ff] p-4 md:p-8 font-sans text-slate-700; } /* 淺海藍背景 */
+        .input-date { @apply bg-blue-50 border-blue-200 text-blue-700; }
+        .input-time { @apply bg-teal-50 border-teal-200 text-teal-700; }
+        .input-std { @apply p-1.5 border rounded-xl text-center font-mono text-sm outline-none focus:ring-4 focus:ring-sky-200 transition-all; }
+        th { @apply bg-sky-100 p-3 text-[13px] text-sky-700 font-bold border-b-2 border-sky-200 tracking-wider; }
+        td { @apply p-2 border-b border-sky-50 text-center; }
+        .btn-action { @apply px-5 py-2.5 rounded-full text-sm font-bold transition-all hover:-translate-y-1 active:scale-95 flex items-center gap-2 shadow-lg text-white; }
+        
+        /* 隱藏數字輸入框的上下箭頭 */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    </style>
+</head>
+<body>
+
+    <div class="max-w-[1400px] mx-auto">
+        <div class="bg-gradient-to-r from-sky-400 via-cyan-400 to-teal-400 p-6 rounded-[2rem] mb-8 flex flex-col lg:flex-row justify-between items-center gap-6 shadow-xl shadow-sky-200/50">
+            <div>
+                <h1 class="text-3xl font-black tracking-widest text-white flex items-center gap-3">
+                    🌊 STABILITY <span class="text-yellow-200 font-bold text-xl drop-shadow-sm">v5.5</span>
+                </h1>
+            </div>
+            <div class="flex flex-wrap justify-center gap-3">
+                <button onclick="exportToExcel()" class="btn-action bg-teal-500 hover:bg-teal-400 shadow-teal-300/50">
+                    📊 匯出 Excel
+                </button>
+                <button onclick="exportJSON()" class="btn-action bg-sky-500 hover:bg-sky-400 shadow-sky-300/50">
+                    💾 儲存備份
+                </button>
+                <label class="btn-action bg-blue-400 hover:bg-blue-500 shadow-blue-300/50 cursor-pointer">
+                    <span>📂 讀取備份</span> 
+                    <input type="file" accept=".json" class="hidden" onchange="importJSON(event)">
+                </label>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
+            <div id="stdContainer"></div>
+            <div id="saContainer"></div>
+        </div>
+    </div>
+
+    <script>
+        // 動態生成模組 HTML (海洋風 UI)
+        function renderModule(targetId, title, prefix, themeColor, lightBg) {
+            const html = `
+            <div class="bg-white rounded-[2rem] shadow-xl shadow-sky-100 overflow-hidden border-4 border-white">
+                <div class="${themeColor} p-4 text-white font-bold text-lg text-center tracking-wide">
+                    ${title}
+                </div>
+                <div class="p-6">
+                    <div class="${lightBg} p-5 rounded-2xl mb-6 border border-white shadow-inner flex flex-col items-center">
+                        <p class="text-xs font-bold text-slate-500 mb-3 bg-white/70 px-4 py-1.5 rounded-full shadow-sm">⏳ T=0 起始時間</p>
+                        <div class="flex flex-wrap justify-center gap-3">
+                            <div class="flex gap-1.5 bg-white p-2 rounded-xl shadow-sm border border-blue-100">
+                                <input type="number" id="${prefix}_y0" class="input-std input-date w-16" placeholder="YYYY" oninput="triggerAll('${prefix}')">
+                                <input type="number" id="${prefix}_m0" class="input-std input-date w-12" placeholder="MM" oninput="triggerAll('${prefix}')">
+                                <input type="number" id="${prefix}_d0" class="input-std input-date w-12" placeholder="DD" oninput="triggerAll('${prefix}')">
+                            </div>
+                            <div class="flex gap-1.5 bg-white p-2 rounded-xl shadow-sm border border-teal-100">
+                                <input type="number" id="${prefix}_h0" class="input-std input-time w-12" placeholder="HH" oninput="triggerAll('${prefix}')">
+                                <input type="number" id="${prefix}_min0" class="input-std input-time w-12" placeholder="mm" oninput="triggerAll('${prefix}')">
+                                <select id="${prefix}_ap0" class="input-std input-time w-16 h-[34px]"><option>AM</option><option selected>PM</option></select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <table class="w-full">
+                        <thead>
+                            <tr>
+                                <th class="w-3/4 rounded-tl-xl">測試時間</th>
+                                <th class="rounded-tr-xl">累積 (hr)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="${prefix}TableBody"></tbody>
+                    </table>
+                </div>
+            </div>`;
+            
+            document.getElementById(targetId).innerHTML = html;
+            const tbody = document.getElementById(`${prefix}TableBody`);
+            
+            for(let i=1; i<=10; i++) {
+                tbody.innerHTML += `
+                <tr class="hover:bg-sky-50/50 transition-colors group">
+                    <td class="flex gap-2 justify-center py-3 border-none">
+                        <div class="flex gap-1 bg-blue-50/50 p-1.5 rounded-xl border border-blue-100 transition-all group-hover:bg-white">
+                            <input type="number" id="${prefix}_y_${i}" class="input-std input-date w-14" placeholder="年" oninput="calc('${prefix}',${i})">
+                            <input type="number" id="${prefix}_m_${i}" class="input-std input-date w-10" placeholder="月" oninput="calc('${prefix}',${i})">
+                            <input type="number" id="${prefix}_d_${i}" class="input-std input-date w-10" placeholder="日" oninput="calc('${prefix}',${i})">
+                        </div>
+                        <span class="self-center text-sky-200 font-black">@</span>
+                        <div class="flex gap-1 bg-teal-50/50 p-1.5 rounded-xl border border-teal-100 transition-all group-hover:bg-white">
+                            <input type="number" id="${prefix}_h_${i}" class="input-std input-time w-10" placeholder="時" oninput="calc('${prefix}',${i})">
+                            <input type="number" id="${prefix}_min_${i}" class="input-std input-time w-10" placeholder="分" oninput="calc('${prefix}',${i})">
+                            <select id="${prefix}_ap_${i}" class="input-std input-time w-14 text-[11px] font-bold" onchange="calc('${prefix}',${i})"><option>AM</option><option selected>PM</option></select>
+                        </div>
+                    </td>
+                    <td id="${prefix}_hr_${i}" class="text-2xl font-black text-slate-300 bg-slate-50/50 rounded-xl">-</td>
+                </tr>`;
+            }
+            // 綁定 AP 下拉選單事件
+            document.getElementById(`${prefix}_ap0`).addEventListener('change', () => triggerAll(prefix));
+        }
+
+        // 渲染模組 (套用海洋色)
+        renderModule('stdContainer', '🧪 標 準 品 ( STD )', 'std', 'bg-sky-400', 'bg-sky-50/60');
+        renderModule('saContainer', '🧬 檢 體 ( Sample )', 'sa', 'bg-teal-400', 'bg-teal-50/60');
+
+        function triggerAll(p) { for(let i=1; i<=10; i++) calc(p, i); }
+
+        function calc(p, i) {
+            const getV = (id) => document.getElementById(id).value;
+            const fields = [getV(`${p}_y0`), getV(`${p}_m0`), getV(`${p}_d0`), getV(`${p}_h0`), getV(`${p}_y_${i}`), getV(`${p}_m_${i}`), getV(`${p}_d_${i}`), getV(`${p}_h_${i}`)];
+            
+            const resCell = document.getElementById(`${p}_hr_${i}`);
+            if (fields.some(f => f === "")) {
+                resCell.innerText = "-";
+                resCell.className = "text-2xl font-black text-slate-300 bg-slate-50/50 rounded-xl";
+                return;
+            }
+
+            const get24H = (h, ap) => {
+                let hour = parseInt(h);
+                if (ap === "PM" && hour < 12) hour += 12;
+                if (ap === "AM" && hour === 12) hour = 0;
+                return hour;
+            };
+
+            const t0 = new Date(getV(`${p}_y0`), getV(`${p}_m0`)-1, getV(`${p}_d0`), get24H(getV(`${p}_h0`), getV(`${p}_ap0`)), getV(`${p}_min0`) || 0).getTime();
+            const ti = new Date(getV(`${p}_y_${i}`), getV(`${p}_m_${i}`)-1, getV(`${p}_d_${i}`), get24H(getV(`${p}_h_${i}`), getV(`${p}_ap_${i}`)), getV(`${p}_min_${i}`) || 0).getTime();
+
+            const diff = ti - t0;
+            if (!isNaN(diff)) {
+                const hours = Math.floor(diff / 3600000); 
+                resCell.innerText = hours < 0 ? 0 : hours;
+                // 計算完成後的深海藍數字
+                resCell.className = "text-2xl font-black text-blue-600 bg-blue-50 rounded-xl shadow-inner border border-blue-100";
+            }
+        }
+
+        // --- 導出 Excel ---
+        function exportToExcel() {
+            const wb = XLSX.utils.book_new();
+            const getRowData = (p, label) => {
+                let rows = [[label + " 起始時間", `${document.getElementById(p+'_y0').value}/${document.getElementById(p+'_m0').value}/${document.getElementById(p+'_d0').value} ${document.getElementById(p+'_h0').value}:${document.getElementById(p+'_min0').value} ${document.getElementById(p+'_ap0').value}`, ""]];
+                rows.push(["點次", "測試日期時間", "累積 (hr)"]);
+                for(let i=1; i<=10; i++) {
+                    const timeStr = `${document.getElementById(p+'_y_'+i).value}/${document.getElementById(p+'_m_'+i).value}/${document.getElementById(p+'_d_'+i).value} ${document.getElementById(p+'_h_'+i).value}:${document.getElementById(p+'_min_'+i).value} ${document.getElementById(p+'_ap_'+i).value}`;
+                    const hr = document.getElementById(`${p}_hr_${i}`).innerText;
+                    rows.push([i, timeStr.includes('//') ? "" : timeStr, hr]);
+                }
+                return rows;
+            };
+
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(getRowData('std', "標準品(STD)")), "STD");
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(getRowData('sa', "檢體(Sample)")), "Sample");
+            XLSX.writeFile(wb, `Stability_${new Date().toISOString().slice(0,10)}.xlsx`);
+        }
+
+        // --- 備份 JSON ---
+        function exportJSON() {
+            const data = {};
+            document.querySelectorAll('input, select').forEach(el => { if(el.id) data[el.id] = el.value; });
+            const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `Backup_${new Date().toLocaleDateString()}.json`;
+            a.click();
+        }
+
+        // --- 讀取 JSON ---
+        function importJSON(e) {
+            const file = e.target.files[0]; if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const data = JSON.parse(event.target.result);
+                Object.keys(data).forEach(id => { if(document.getElementById(id)) document.getElementById(id).value = data[id]; });
+                triggerAll('std'); triggerAll('sa');
+            };
+            reader.readAsText(file);
+        }
+    </script>
+</body>
+</html>
